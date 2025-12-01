@@ -20,8 +20,9 @@ api.interceptors.request.use((config) => {
 });
 
 // Auth APIs
-export const register = async (username, password, publicSigningKey, publicKeyExchangeKey) => {
+export const register = async (email, username, password, publicSigningKey, publicKeyExchangeKey) => {
   const response = await api.post('/auth/register', {
+    email,
     username,
     password,
     publicSigningKey,
@@ -30,8 +31,8 @@ export const register = async (username, password, publicSigningKey, publicKeyEx
   return response.data;
 };
 
-export const login = async (username, password) => {
-  const response = await api.post('/auth/login', { username, password });
+export const login = async (email, password) => {
+  const response = await api.post('/auth/login', { email, password });
   return response.data;
 };
 

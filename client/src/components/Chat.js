@@ -1,6 +1,74 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { getUsers } from '../services/api';
 import { initSocket, joinRoom, sendEncryptedMessage, onMessage, disconnect } from '../services/socket';
+import { Avatar } from './common';
+
+// Memoized user list item component
+const UserListItem = memo(function UserListItem({ user, isSelected, onSelect }) {
+  const handleClick = useCallback(() => {
+    onSelect(user);
+  }, [user, onSelect]);
+
+  return (
+    <div
+      className={`user-item ${isSelected ? 'active' : ''}`}
+      onClick={handleClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === 'Enter' && handleClick()}
+      aria-pressed={isSelected}
+    >
+      <Avatar username={user.username} status={user.status} />
+      <div className="user-info">
+        <div className="user-name">{user.username}</div>
+        <div className={`user-status ${user.status || 'offline'}`}>
+          {user.status || 'offline'}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+// Memoized message bubble component
+const MessageBubble = memo(function MessageBubble({ message }) {
+  return (
+    <div className={`message ${message.sent ? 'sent' : 'received'}`}>
+      <div className="message-bubble">
+        {message.text}
+      </div>
+    </div>
+  );
+});
+
+// Memoized empty state component
+const EmptyState = memo(function EmptyState({ username }) {
+  return (
+    <div className="no-chat">
+      <h2>Welcome, {username}</h2>
+      <p>Select a contact to start an encrypted conversation</p>
+    </div>
+  );
+});
+
+// Memoized encryption status component
+const EncryptionStatus = memo(function EncryptionStatus({ status }) {
+  return (
+    <span className={`encryption-status ${status}`}>
+      {status === 'encrypted' ? 'End-to-End Encrypted' : 'Establishing Encryption...'}
+    </span>
+  );
+});
+
+// Memoized chat header component
+const ChatHeader = memo(function ChatHeader({ user, encryptionStatus }) {
+  return (
+    <div className="chat-header">
+      <Avatar username={user.username} />
+      <h3>{user.username}</h3>
+      <EncryptionStatus status={encryptionStatus} />
+    </div>
+  );
+});
 
 function Chat({ user, onLogout }) {
   const [users, setUsers] = useState([]);
@@ -9,17 +77,28 @@ function Chat({ user, onLogout }) {
   const [inputMessage, setInputMessage] = useState('');
   const [encryptionStatus, setEncryptionStatus] = useState('pending');
   const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
 
+  // Fetch users on mount
   useEffect(() => {
-    // Initialize socket connection
+    const fetchUsers = async () => {
+      try {
+        const userList = await getUsers();
+        setUsers(userList.filter(u => u._id !== user.id));
+      } catch (error) {
+        console.error('Failed to fetch users:', error);
+      }
+    };
+
+    fetchUsers();
+  }, [user.id]);
+
+  // Socket connection management
+  useEffect(() => {
     initSocket();
     joinRoom(user.id);
 
-    // Fetch users list
-    fetchUsers();
-
-    // Listen for incoming messages
-    onMessage((data) => {
+    const handleMessage = (data) => {
       setMessages(prev => ({
         ...prev,
         [data.from]: [...(prev[data.from] || []), {
@@ -28,43 +107,41 @@ function Chat({ user, onLogout }) {
           timestamp: data.timestamp
         }]
       }));
-    });
+    };
+
+    onMessage(handleMessage);
 
     return () => {
       disconnect();
     };
   }, [user.id]);
 
+  // Scroll to bottom when messages change
   useEffect(() => {
-    // Scroll to bottom when messages change
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, selectedUser]);
 
-  const fetchUsers = async () => {
-    try {
-      const userList = await getUsers();
-      // Filter out current user
-      setUsers(userList.filter(u => u._id !== user.id));
-    } catch (error) {
-      console.error('Failed to fetch users:', error);
-    }
-  };
-
-  const handleSelectUser = (selectedUser) => {
+  // Memoized handlers
+  const handleSelectUser = useCallback((selectedUser) => {
     setSelectedUser(selectedUser);
     setEncryptionStatus('pending');
     // TODO: Initiate key exchange in Phase 3
     setTimeout(() => setEncryptionStatus('encrypted'), 1000);
-  };
+    // Focus input after selection
+    setTimeout(() => inputRef.current?.focus(), 100);
+  }, []);
 
-  const handleSendMessage = async (e) => {
+  const handleInputChange = useCallback((e) => {
+    setInputMessage(e.target.value);
+  }, []);
+
+  const handleSendMessage = useCallback(async (e) => {
     e.preventDefault();
     if (!inputMessage.trim() || !selectedUser) return;
 
     const messageText = inputMessage;
     setInputMessage('');
 
-    // Add to local messages
     setMessages(prev => ({
       ...prev,
       [selectedUser._id]: [...(prev[selectedUser._id] || []), {
@@ -75,101 +152,107 @@ function Chat({ user, onLogout }) {
     }));
 
     // TODO: Encrypt and send in Phase 4
-    // For now, just send via socket
     sendEncryptedMessage(selectedUser._id, messageText);
-  };
+  }, [inputMessage, selectedUser]);
 
-  const formatTime = (timestamp) => {
-    return new Date(timestamp).toLocaleTimeString([], { 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
-  };
+  // Memoized current messages
+  const currentMessages = useMemo(() => {
+    return selectedUser ? (messages[selectedUser._id] || []) : [];
+  }, [messages, selectedUser]);
+
+  // Memoized user list
+  const userList = useMemo(() => {
+    return users.map(u => (
+      <UserListItem
+        key={u._id}
+        user={u}
+        isSelected={selectedUser?._id === u._id}
+        onSelect={handleSelectUser}
+      />
+    ));
+  }, [users, selectedUser, handleSelectUser]);
+
+  // Memoized message list
+  const messageList = useMemo(() => {
+    return currentMessages.map((msg, index) => (
+      <MessageBubble key={`${msg.timestamp}-${index}`} message={msg} />
+    ));
+  }, [currentMessages]);
 
   return (
     <div className="chat-container">
       {/* Sidebar */}
-      <div className="sidebar">
+      <aside className="sidebar" role="navigation" aria-label="Contacts">
         <div className="sidebar-header">
-          <h3>Secure Chat</h3>
-          <button className="logout-btn" onClick={onLogout}>
+          <h3>CryptShare</h3>
+          <button 
+            className="logout-btn" 
+            onClick={onLogout}
+            aria-label="Logout"
+          >
             Logout
           </button>
         </div>
         
-        <div className="user-list">
+        <div className="user-list" role="listbox" aria-label="Contact list">
           {users.length === 0 ? (
-            <p style={{ textAlign: 'center', color: '#aaa', padding: '20px' }}>
-              No other users yet
+            <p className="empty-contacts">
+              No contacts available
             </p>
           ) : (
-            users.map(u => (
-              <div
-                key={u._id}
-                className={`user-item ${selectedUser?._id === u._id ? 'active' : ''}`}
-                onClick={() => handleSelectUser(u)}
-              >
-                <div className="user-avatar">
-                  {u.username.charAt(0).toUpperCase()}
-                </div>
-                <div className="user-info">
-                  <div className="user-name">{u.username}</div>
-                  <div className={`user-status ${u.status}`}>
-                    {u.status || 'offline'}
-                  </div>
-                </div>
-              </div>
-            ))
+            userList
           )}
         </div>
-      </div>
+      </aside>
 
       {/* Chat Area */}
-      <div className="chat-area">
+      <main className="chat-area" role="main">
         {selectedUser ? (
           <>
-            <div className="chat-header">
-              <div className="user-avatar">
-                {selectedUser.username.charAt(0).toUpperCase()}
-              </div>
-              <h3>{selectedUser.username}</h3>
-              <span className={`encryption-status ${encryptionStatus}`}>
-                {encryptionStatus === 'encrypted' ? '🔒 End-to-End Encrypted' : '🔄 Establishing Encryption...'}
-              </span>
+            <ChatHeader 
+              user={selectedUser} 
+              encryptionStatus={encryptionStatus} 
+            />
+
+            <div 
+              className="messages-container" 
+              role="log" 
+              aria-live="polite"
+              aria-label="Message history"
+            >
+              {messageList}
+              <div ref={messagesEndRef} aria-hidden="true" />
             </div>
 
-            <div className="messages-container">
-              {(messages[selectedUser._id] || []).map((msg, index) => (
-                <div key={index} className={`message ${msg.sent ? 'sent' : 'received'}`}>
-                  <div className="message-bubble">
-                    {msg.text}
-                  </div>
-                </div>
-              ))}
-              <div ref={messagesEndRef} />
-            </div>
-
-            <form className="message-input-container" onSubmit={handleSendMessage}>
+            <form 
+              className="message-input-container" 
+              onSubmit={handleSendMessage}
+              aria-label="Send message"
+            >
               <input
+                ref={inputRef}
                 type="text"
                 placeholder="Type a message..."
                 value={inputMessage}
-                onChange={(e) => setInputMessage(e.target.value)}
+                onChange={handleInputChange}
+                aria-label="Message input"
               />
-              <button type="submit" className="send-btn">
+              <button 
+                type="submit" 
+                className="send-btn"
+                disabled={!inputMessage.trim()}
+                aria-label="Send message"
+              >
                 &#10148;
               </button>
             </form>
           </>
         ) : (
-          <div className="no-chat">
-            <h2>Welcome, {user.username}!</h2>
-            <p>Select a user to start an encrypted conversation</p>
-          </div>
+          <EmptyState username={user.username} />
         )}
-      </div>
+      </main>
     </div>
   );
 }
 
-export default Chat;
+export default memo(Chat);
