@@ -20,10 +20,10 @@ const messageSchema = new mongoose.Schema({
     type: String,  // Base64 encoded IV
     required: true
   },
-  // For replay protection
+  // For replay protection (optional)
   nonce: {
     type: String,
-    required: true
+    default: ''
   },
   timestamp: {
     type: Date,

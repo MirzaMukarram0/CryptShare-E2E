@@ -9,6 +9,7 @@ require('dotenv').config();
 const authRoutes = require('./routes/auth');
 const messageRoutes = require('./routes/messages');
 const fileRoutes = require('./routes/files');
+const Message = require('./models/Message');
 
 // Initialize Express app
 const app = express();
@@ -45,23 +46,40 @@ io.on('connection', (socket) => {
 
   // Join a room (for private messaging)
   socket.on('join', (userId) => {
+    socket.userId = userId; // Store userId on socket for message relay
     socket.join(userId);
     console.log(`User ${userId} joined their room`);
   });
 
   // Relay encrypted message (server cannot decrypt)
-  socket.on('message', (data) => {
-    const { to, ciphertext, iv, timestamp, nonce, sequence } = data;
+  socket.on('message', async (data) => {
+    const { to, ciphertext, iv, timestamp } = data;
+    
+    console.log(`[Message] Encrypted message from ${socket.userId} to ${to}`);
     
     // Forward to recipient (still encrypted)
     io.to(to).emit('message', {
       from: socket.userId,
       ciphertext,
       iv,
-      timestamp,
-      nonce,
-      sequence
+      timestamp
     });
+    
+    // Store encrypted message in MongoDB
+    // Server cannot decrypt - only stores ciphertext + metadata
+    try {
+      await Message.create({
+        sender: socket.userId,
+        recipient: to,
+        ciphertext,
+        iv,
+        nonce: '', // Could add nonce for replay protection
+        timestamp: new Date(timestamp)
+      });
+      console.log(`[Message] Encrypted message stored in MongoDB`);
+    } catch (error) {
+      console.error('[Message] Failed to store message:', error);
+    }
   });
 
   // Key exchange messages

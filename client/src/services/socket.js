@@ -1,8 +1,12 @@
 import { io } from 'socket.io-client';
+import { encryptMessage, decryptMessage } from '../crypto/encryption';
+import { getOrCreateConversationKey } from '../crypto/conversationKey';
+import { getUser } from './api';
 
 const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000';
 
 let socket = null;
+let currentUserId = null;
 
 // Initialize socket connection
 export function initSocket() {
@@ -32,33 +36,70 @@ export function joinRoom(userId) {
   if (socket) {
     socket.emit('join', userId);
     socket.userId = userId;
+    currentUserId = userId;
   }
 }
 
 // Send encrypted message
-export function sendEncryptedMessage(recipientId, plaintext) {
-  if (socket) {
-    // TODO: Encrypt message before sending (Phase 4)
-    // For now, send plaintext wrapped in a message object
+export async function sendEncryptedMessage(recipientId, plaintext) {
+  if (!socket) {
+    console.error('[Socket] Cannot send message: socket not connected');
+    return;
+  }
+  
+  try {
+    // Get recipient's public key from API to derive conversation key
+    const recipientData = await getUser(recipientId);
+    const recipientPublicKeyExchange = recipientData.publicKeys.keyExchange;
+    
+    // Get or derive conversation key (persistent across sessions)
+    const conversationKey = await getOrCreateConversationKey(currentUserId, recipientId, recipientPublicKeyExchange);
+    
+    // Encrypt the message
+    const { ciphertext, iv } = await encryptMessage(conversationKey, plaintext);
+    
+    console.log('[Socket] Sending encrypted message to:', recipientId);
+    
+    // Send encrypted message
     socket.emit('message', {
       to: recipientId,
-      ciphertext: btoa(plaintext), // Temporary: base64 encode (NOT encryption!)
-      iv: 'temp-iv',
-      timestamp: Date.now(),
-      nonce: Math.random().toString(36).substr(2, 9),
-      sequence: Date.now()
+      ciphertext,
+      iv,
+      timestamp: Date.now()
     });
+    
+  } catch (error) {
+    console.error('[Socket] Failed to send encrypted message:', error);
+    throw error;
   }
 }
 
 // Listen for incoming messages
 export function onMessage(callback) {
   if (socket) {
-    socket.on('message', (data) => {
-      // TODO: Decrypt message (Phase 4)
-      // For now, decode base64
-      const plaintext = atob(data.ciphertext);
-      callback({ ...data, plaintext });
+    socket.on('message', async (data) => {
+      console.log('[Socket] Received encrypted message from:', data.from);
+      
+      try {
+        // Get sender's public key from API to derive conversation key
+        const senderData = await getUser(data.from);
+        const senderPublicKeyExchange = senderData.publicKeys.keyExchange;
+        
+        // Get or derive conversation key (persistent across sessions)
+        const conversationKey = await getOrCreateConversationKey(currentUserId, data.from, senderPublicKeyExchange);
+        
+        // Decrypt the message
+        const plaintext = await decryptMessage(conversationKey, data.ciphertext, data.iv);
+        
+        console.log('[Socket] Message decrypted successfully');
+        
+        // Call callback with decrypted message
+        callback({ ...data, plaintext, decrypted: true });
+        
+      } catch (error) {
+        console.error('[Socket] Decryption failed:', error);
+        callback({ ...data, plaintext: '[Decryption failed]', error: true });
+      }
     });
   }
 }

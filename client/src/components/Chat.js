@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { getUsers, getUser } from '../services/api';
-import { initSocket, joinRoom, sendEncryptedMessage, onMessage, disconnect, onKexInit, onKexResponse, onKexConfirm, sendKexInit, sendKexResponse, sendKexConfirm } from '../services/socket';
+import { initSocket, joinRoom, onMessage, disconnect, onKexInit, onKexResponse, onKexConfirm, sendKexInit, sendKexResponse, sendKexConfirm, getSocket } from '../services/socket';
 import { Avatar } from './common';
 import { getPrivateKey } from '../crypto/keyStore';
+import { encryptMessage, decryptMessage } from '../crypto/encryption';
+import { deriveConversationKey } from '../crypto/conversationKey';
 import { 
   generateEphemeralKeyPair, 
   createKexInit, 
@@ -49,9 +51,10 @@ const UserListItem = memo(function UserListItem({ user, isSelected, onSelect }) 
 // Memoized message bubble component
 const MessageBubble = memo(function MessageBubble({ message }) {
   return (
-    <div className={`message ${message.sent ? 'sent' : 'received'}`}>
+    <div className={`message ${message.sent ? 'sent' : 'received'} ${message.error ? 'error' : ''}`}>
       <div className="message-bubble">
         {message.text}
+        {message.error && <span className="message-error-icon" title="Decryption failed"> ⚠️</span>}
       </div>
     </div>
   );
@@ -103,6 +106,7 @@ function Chat({ user, onLogout }) {
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const ephemeralKeysRef = useRef(new Map()); // Store ephemeral keys during exchange
+  const conversationKeysRef = useRef(new Map()); // Cache conversation keys
 
   // Console logging styles
   const LOG_STYLES = useMemo(() => ({
@@ -112,6 +116,26 @@ function Chat({ user, onLogout }) {
     error: 'color: #ef4444; font-weight: bold;',
     detail: 'color: #94a3b8;'
   }), []);
+
+  // Get or derive conversation key for a peer
+  const getConversationKey = useCallback(async (peerId, peerPublicKeys = null) => {
+    // Check cache first
+    if (conversationKeysRef.current.has(peerId)) {
+      return conversationKeysRef.current.get(peerId);
+    }
+    
+    // If peerPublicKeys not provided, fetch from API
+    let publicKeys = peerPublicKeys;
+    if (!publicKeys) {
+      const peerData = await getUser(peerId);
+      publicKeys = peerData.publicKeys;
+    }
+    
+    // Derive new conversation key
+    const convKey = await deriveConversationKey(user.id, publicKeys.keyExchange);
+    conversationKeysRef.current.set(peerId, convKey);
+    return convKey;
+  }, [user.id]);
 
   // Get my signing private key from IndexedDB
   const getMySigningKey = useCallback(async () => {
@@ -339,12 +363,19 @@ function Chat({ user, onLogout }) {
     joinRoom(user.id);
 
     const handleMessage = (data) => {
+      console.log('%c📨 Incoming message', 'color: #3b82f6; font-weight: bold;', {
+        from: data.from,
+        decrypted: data.decrypted,
+        error: data.error
+      });
+      
       setMessages(prev => ({
         ...prev,
         [data.from]: [...(prev[data.from] || []), {
           text: data.plaintext || '[Encrypted]',
           sent: false,
-          timestamp: data.timestamp
+          timestamp: data.timestamp,
+          error: data.error // Flag if decryption failed
         }]
       }));
     };
@@ -395,6 +426,7 @@ function Chat({ user, onLogout }) {
     const messageText = inputMessage;
     setInputMessage('');
 
+    // Add optimistic message to UI
     setMessages(prev => ({
       ...prev,
       [selectedUser._id]: [...(prev[selectedUser._id] || []), {
@@ -404,9 +436,98 @@ function Chat({ user, onLogout }) {
       }]
     }));
 
-    // TODO: Encrypt and send in Phase 4
-    sendEncryptedMessage(selectedUser._id, messageText);
-  }, [inputMessage, selectedUser]);
+    // Encrypt and send message using conversation key
+    try {
+      // Get or derive conversation key
+      const conversationKey = await getConversationKey(selectedUser._id, selectedUser.publicKeys);
+      
+      // Encrypt the message
+      const { ciphertext, iv } = await encryptMessage(conversationKey, messageText);
+      
+      // Send via socket
+      const socket = getSocket();
+      if (socket) {
+        socket.emit('message', {
+          to: selectedUser._id,
+          ciphertext,
+          iv,
+          timestamp: Date.now()
+        });
+        console.log('%c📤 Message sent successfully', 'color: #22c55e; font-weight: bold;');
+      } else {
+        throw new Error('Socket not connected');
+      }
+    } catch (error) {
+      console.error('%c✗ Failed to send message:', 'color: #ef4444; font-weight: bold;', error);
+    }
+  }, [inputMessage, selectedUser, getConversationKey]);
+
+  // Fetch encrypted message history and decrypt using conversation key
+  const loadMessageHistory = useCallback(async (peerId) => {
+    console.log('%c📂 Loading message history...', 'color: #3b82f6; font-weight: bold;');
+    
+    try {
+      const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+      const response = await fetch(`${API_URL}/messages/${peerId}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (!response.ok) return;
+      
+      const encryptedMessages = await response.json();
+      console.log('%c    Found ' + encryptedMessages.length + ' encrypted messages', 'color: #94a3b8;');
+      
+      if (encryptedMessages.length === 0) return;
+      
+      // Get or derive conversation key (persistent across sessions)
+      // getConversationKey will fetch peer's public keys if not cached
+      const conversationKey = await getConversationKey(peerId);
+      
+      // Decrypt each message
+      const decryptedMessages = await Promise.all(
+        encryptedMessages.map(async (msg) => {
+          try {
+            const plaintext = await decryptMessage(conversationKey, msg.ciphertext, msg.iv);
+            return {
+              text: plaintext,
+              sent: msg.sender === user.id,
+              timestamp: new Date(msg.timestamp).getTime(),
+              encrypted: true
+            };
+          } catch (error) {
+            console.error('Failed to decrypt message:', error);
+            return {
+              text: '[Failed to decrypt]',
+              sent: msg.sender === user.id,
+              timestamp: new Date(msg.timestamp).getTime(),
+              error: true
+            };
+          }
+        })
+      );
+      
+      // Add to messages state
+      setMessages(prev => ({
+        ...prev,
+        [peerId]: decryptedMessages
+      }));
+      
+      console.log('%c✓ Message history loaded and decrypted', 'color: #22c55e; font-weight: bold;');
+      
+    } catch (error) {
+      console.error('Failed to load message history:', error);
+    }
+  }, [user.id, getConversationKey]);
+
+  // Load message history when a user is selected
+  // We can use conversation keys (derived from long-term keys) even before session key exchange
+  useEffect(() => {
+    if (selectedUser) {
+      loadMessageHistory(selectedUser._id);
+    }
+  }, [selectedUser, loadMessageHistory]);
 
   // Memoized current messages
   const currentMessages = useMemo(() => {
