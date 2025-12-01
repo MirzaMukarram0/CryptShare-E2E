@@ -188,4 +188,57 @@ router.get('/user/:id', async (req, res) => {
   }
 });
 
+// PUT /api/auth/keys - Update user's public keys (for new device login)
+const { authenticate } = require('../middleware/auth');
+
+router.put('/keys', authenticate, async (req, res) => {
+  try {
+    const { publicSigningKey, publicKeyExchangeKey } = req.body;
+    
+    if (!publicSigningKey || !publicKeyExchangeKey) {
+      return res.status(400).json({ error: 'Public keys are required' });
+    }
+    
+    const user = await User.findByIdAndUpdate(
+      req.userId,
+      {
+        publicKeys: {
+          signing: publicSigningKey,
+          keyExchange: publicKeyExchangeKey
+        }
+      },
+      { new: true }
+    );
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Log key update
+    await Log.create({
+      eventType: 'KEY_UPDATE',
+      userId: user._id,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+      details: { reason: 'New device login' },
+      severity: 'INFO',
+      success: true
+    });
+    
+    console.log(`Public keys updated for user: ${user.username}`);
+    
+    res.json({ 
+      message: 'Public keys updated successfully',
+      user: {
+        id: user._id,
+        username: user.username
+      }
+    });
+    
+  } catch (error) {
+    console.error('Key update error:', error);
+    res.status(500).json({ error: 'Failed to update keys' });
+  }
+});
+
 module.exports = router;

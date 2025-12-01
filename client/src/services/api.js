@@ -46,6 +46,19 @@ export const getUser = async (userId) => {
   return response.data;
 };
 
+// Update public keys (when logging in from a new device)
+export const updatePublicKeys = async (token, publicSigningKey, publicKeyExchangeKey) => {
+  const response = await api.put('/auth/keys', {
+    publicSigningKey,
+    publicKeyExchangeKey
+  }, {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+  return response.data;
+};
+
 // Message APIs
 export const sendMessage = async (recipientId, ciphertext, iv, nonce) => {
   const response = await api.post('/messages', {

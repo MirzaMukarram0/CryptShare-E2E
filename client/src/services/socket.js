@@ -66,38 +66,56 @@ export function onMessage(callback) {
 // Key Exchange Events
 export function sendKexInit(data) {
   if (socket) {
+    console.log('[Socket] Sending kex_init to:', data.receiverId);
     socket.emit('kex_init', data);
+  } else {
+    console.error('[Socket] Cannot send kex_init: socket not connected');
   }
 }
 
 export function sendKexResponse(data) {
   if (socket) {
+    console.log('[Socket] Sending kex_response to:', data.receiverId);
     socket.emit('kex_response', data);
+  } else {
+    console.error('[Socket] Cannot send kex_response: socket not connected');
   }
 }
 
 export function sendKexConfirm(data) {
   if (socket) {
+    console.log('[Socket] Sending kex_confirm to:', data.receiverId);
     socket.emit('kex_confirm', data);
+  } else {
+    console.error('[Socket] Cannot send kex_confirm: socket not connected');
   }
 }
 
 export function onKexInit(callback) {
-  if (socket) {
-    socket.on('kex_init', callback);
-  }
+  const sock = initSocket(); // Ensure socket exists
+  sock.off('kex_init'); // Remove any existing listener
+  sock.on('kex_init', (data) => {
+    console.log('[Socket] Received kex_init from:', data.senderId);
+    callback(data);
+  });
 }
 
 export function onKexResponse(callback) {
-  if (socket) {
-    socket.on('kex_response', callback);
-  }
+  const sock = initSocket(); // Ensure socket exists
+  sock.off('kex_response'); // Remove any existing listener
+  sock.on('kex_response', (data) => {
+    console.log('[Socket] Received kex_response from:', data.senderId);
+    callback(data);
+  });
 }
 
 export function onKexConfirm(callback) {
-  if (socket) {
-    socket.on('kex_confirm', callback);
-  }
+  const sock = initSocket(); // Ensure socket exists
+  sock.off('kex_confirm'); // Remove any existing listener
+  sock.on('kex_confirm', (data) => {
+    console.log('[Socket] Received kex_confirm from:', data.senderId);
+    callback(data);
+  });
 }
 
 // Disconnect socket
