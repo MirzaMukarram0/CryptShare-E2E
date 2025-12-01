@@ -1,7 +1,8 @@
 import React, { useState, useCallback, useMemo, memo } from 'react';
 import { Link } from 'react-router-dom';
-import { login } from '../services/api';
-import { getPrivateKey } from '../crypto/keyStore';
+import { login, updatePublicKeys } from '../services/api';
+import { getPrivateKey, savePrivateKey } from '../crypto/keyStore';
+import { generateSigningKeyPair, generateKeyExchangeKeyPair, exportPublicKey, exportPrivateKey } from '../crypto/keys';
 import { FormInput, Button } from './common';
 
 // Validation helpers - defined outside component to avoid recreation
@@ -100,18 +101,48 @@ function Login({ onLogin }) {
       
       setKeyStatus('Retrieving encryption keys...');
       
-      const [signingKey, keyExchangeKey] = await Promise.all([
+      let [signingKey, keyExchangeKey] = await Promise.all([
         getPrivateKey(`${response.user.id}_signing`),
         getPrivateKey(`${response.user.id}_keyExchange`)
       ]);
       
+      // If keys not found on this device, regenerate them
       if (!signingKey || !keyExchangeKey) {
-        setError('Private keys not found. Please register again on this device.');
-        setLoading(false);
-        return;
+        console.log('%c⚠️ Keys not found - regenerating for this device...', 'color: #f59e0b; font-weight: bold;');
+        setKeyStatus('Generating new encryption keys for this device...');
+        
+        // Generate new key pairs
+        const [signingKeyPair, keyExchangeKeyPair] = await Promise.all([
+          generateSigningKeyPair(),
+          generateKeyExchangeKeyPair()
+        ]);
+        
+        // Export keys
+        const [publicSigningKey, privateSigningKey, publicKeyExchangeKey, privateKeyExchangeKey] = await Promise.all([
+          exportPublicKey(signingKeyPair.publicKey),
+          exportPrivateKey(signingKeyPair.privateKey),
+          exportPublicKey(keyExchangeKeyPair.publicKey),
+          exportPrivateKey(keyExchangeKeyPair.privateKey)
+        ]);
+        
+        // Save private keys to IndexedDB
+        await Promise.all([
+          savePrivateKey(`${response.user.id}_signing`, privateSigningKey),
+          savePrivateKey(`${response.user.id}_keyExchange`, privateKeyExchangeKey)
+        ]);
+        
+        // Update public keys on server
+        setKeyStatus('Updating server with new public keys...');
+        await updatePublicKeys(response.token, publicSigningKey, publicKeyExchangeKey);
+        
+        signingKey = privateSigningKey;
+        keyExchangeKey = privateKeyExchangeKey;
+        
+        console.log('%c✓ New keys generated and synced!', 'color: #22c55e; font-weight: bold;');
+        setKeyStatus('New keys generated successfully!');
+      } else {
+        setKeyStatus('Keys retrieved successfully!');
       }
-      
-      setKeyStatus('Keys retrieved successfully!');
       
       sessionStorage.setItem('signingKey', JSON.stringify(signingKey));
       sessionStorage.setItem('keyExchangeKey', JSON.stringify(keyExchangeKey));

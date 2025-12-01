@@ -1,7 +1,24 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
-import { getUsers } from '../services/api';
-import { initSocket, joinRoom, sendEncryptedMessage, onMessage, disconnect } from '../services/socket';
+import { getUsers, getUser } from '../services/api';
+import { initSocket, joinRoom, sendEncryptedMessage, onMessage, disconnect, onKexInit, onKexResponse, onKexConfirm, sendKexInit, sendKexResponse, sendKexConfirm } from '../services/socket';
 import { Avatar } from './common';
+import { getPrivateKey } from '../crypto/keyStore';
+import { 
+  generateEphemeralKeyPair, 
+  createKexInit, 
+  processKexInitAndCreateResponse, 
+  processKexResponseAndCreateConfirm, 
+  processKexConfirm 
+} from '../crypto/keyExchange';
+import { 
+  storeSessionKey, 
+  getSessionKey, 
+  hasSessionKey, 
+  storePendingKex, 
+  getPendingKex, 
+  removePendingKex,
+  clearAllSessionKeys 
+} from '../crypto/sessionKeyStore';
 
 // Memoized user list item component
 const UserListItem = memo(function UserListItem({ user, isSelected, onSelect }) {
@@ -51,10 +68,17 @@ const EmptyState = memo(function EmptyState({ username }) {
 });
 
 // Memoized encryption status component
-const EncryptionStatus = memo(function EncryptionStatus({ status }) {
+const EncryptionStatus = memo(function EncryptionStatus({ status, peerStatus }) {
+  const statusText = {
+    pending: peerStatus === 'offline' ? 'Peer Offline - Waiting...' : 'Establishing Encryption...',
+    exchanging: 'Key Exchange in Progress...',
+    complete: 'End-to-End Encrypted',
+    error: 'Encryption Failed'
+  };
+  
   return (
     <span className={`encryption-status ${status}`}>
-      {status === 'encrypted' ? 'End-to-End Encrypted' : 'Establishing Encryption...'}
+      {statusText[status] || statusText.pending}
     </span>
   );
 });
@@ -63,9 +87,9 @@ const EncryptionStatus = memo(function EncryptionStatus({ status }) {
 const ChatHeader = memo(function ChatHeader({ user, encryptionStatus }) {
   return (
     <div className="chat-header">
-      <Avatar username={user.username} />
+      <Avatar username={user.username} status={user.status} />
       <h3>{user.username}</h3>
-      <EncryptionStatus status={encryptionStatus} />
+      <EncryptionStatus status={encryptionStatus} peerStatus={user.status} />
     </div>
   );
 });
@@ -75,9 +99,29 @@ function Chat({ user, onLogout }) {
   const [selectedUser, setSelectedUser] = useState(null);
   const [messages, setMessages] = useState({});
   const [inputMessage, setInputMessage] = useState('');
-  const [encryptionStatus, setEncryptionStatus] = useState('pending');
+  const [encryptionStatus, setEncryptionStatus] = useState({});
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const ephemeralKeysRef = useRef(new Map()); // Store ephemeral keys during exchange
+
+  // Console logging styles
+  const LOG_STYLES = useMemo(() => ({
+    header: 'background: #ec4899; color: white; padding: 2px 8px; border-radius: 4px; font-weight: bold;',
+    info: 'color: #60a5fa;',
+    success: 'color: #22c55e; font-weight: bold;',
+    error: 'color: #ef4444; font-weight: bold;',
+    detail: 'color: #94a3b8;'
+  }), []);
+
+  // Get my signing private key from IndexedDB
+  const getMySigningKey = useCallback(async () => {
+    const signingKey = await getPrivateKey(`${user.id}_signing`);
+    if (!signingKey) {
+      console.error('%c✗ Signing key not found in IndexedDB!', LOG_STYLES.error);
+      throw new Error('Signing key not found');
+    }
+    return signingKey;
+  }, [user.id, LOG_STYLES.error]);
 
   // Fetch users on mount
   useEffect(() => {
@@ -92,6 +136,202 @@ function Chat({ user, onLogout }) {
 
     fetchUsers();
   }, [user.id]);
+
+  // Key Exchange Protocol Handlers
+  const initiateKeyExchange = useCallback(async (peerId, peerPublicKeys) => {
+    console.log('%c🔄 CHAT: Initiating CryptShare-KEX', LOG_STYLES.header);
+    console.log('%c    With peer: ' + peerId, LOG_STYLES.detail);
+    
+    // Check if we already have a session key
+    if (hasSessionKey(peerId)) {
+      console.log('%c✓ Session key already exists, skipping KEX', LOG_STYLES.success);
+      setEncryptionStatus(prev => ({ ...prev, [peerId]: 'complete' }));
+      return;
+    }
+    
+    try {
+      setEncryptionStatus(prev => ({ ...prev, [peerId]: 'exchanging' }));
+      
+      // Generate ephemeral keys for this exchange
+      const ephemeralKeyPair = await generateEphemeralKeyPair();
+      ephemeralKeysRef.current.set(peerId, ephemeralKeyPair);
+      
+      // Get my signing key from IndexedDB
+      const signingKey = await getMySigningKey();
+      
+      // Create KEX_INIT message
+      const kexInit = await createKexInit(
+        ephemeralKeyPair,
+        signingKey,
+        user.id,
+        peerId
+      );
+      
+      // Store pending state
+      storePendingKex(peerId, {
+        ephemeralKeyPair,
+        myNonce: kexInit.nonce,
+        peerPublicKeys,
+        role: 'initiator'
+      });
+      
+      // Send via socket
+      sendKexInit(kexInit);
+      
+      console.log('%c✓ KEX_INIT sent, waiting for response...', LOG_STYLES.info);
+      
+    } catch (err) {
+      console.error('%c✗ Key exchange initiation failed:', LOG_STYLES.error, err);
+      setEncryptionStatus(prev => ({ ...prev, [peerId]: 'error' }));
+    }
+  }, [user.id, getMySigningKey, LOG_STYLES]);
+
+  // Handle incoming KEX_INIT (we are responder)
+  const handleKexInit = useCallback(async (kexInit) => {
+    console.log('%c📥 CHAT: Received KEX_INIT', LOG_STYLES.header);
+    console.log('%c    From: ' + kexInit.senderId, LOG_STYLES.detail);
+    
+    const peerId = kexInit.senderId;
+    
+    try {
+      setEncryptionStatus(prev => ({ ...prev, [peerId]: 'exchanging' }));
+      
+      // Fetch peer's public keys
+      const peerData = await getUser(peerId);
+      const peerPublicKeys = peerData.publicKeys;
+      
+      // Generate our ephemeral keys
+      const myEphemeralKeyPair = await generateEphemeralKeyPair();
+      ephemeralKeysRef.current.set(peerId, myEphemeralKeyPair);
+      
+      // Get my signing key
+      const signingKey = await getMySigningKey();
+      
+      // Process KEX_INIT and create response
+      const result = await processKexInitAndCreateResponse(
+        kexInit,
+        peerPublicKeys.signing,
+        myEphemeralKeyPair,
+        signingKey,
+        user.id
+      );
+      
+      // Store the session key (but mark as pending confirmation)
+      storePendingKex(peerId, {
+        sessionKey: result.sessionKey,
+        initiatorNonce: result.initiatorNonce,
+        responderNonce: result.responderNonce,
+        peerPublicKeys,
+        role: 'responder'
+      });
+      
+      // Send response
+      sendKexResponse(result.response);
+      
+      console.log('%c✓ KEX_RESPONSE sent, waiting for confirmation...', LOG_STYLES.info);
+      
+    } catch (err) {
+      console.error('%c✗ KEX_INIT processing failed:', LOG_STYLES.error, err);
+      setEncryptionStatus(prev => ({ ...prev, [peerId]: 'error' }));
+    }
+  }, [user.id, getMySigningKey, LOG_STYLES]);
+
+  // Handle incoming KEX_RESPONSE (we are initiator)
+  const handleKexResponse = useCallback(async (kexResponse) => {
+    console.log('%c📥 CHAT: Received KEX_RESPONSE', LOG_STYLES.header);
+    console.log('%c    From: ' + kexResponse.senderId, LOG_STYLES.detail);
+    
+    const peerId = kexResponse.senderId;
+    
+    try {
+      // Get pending state
+      const pendingState = getPendingKex(peerId);
+      if (!pendingState) {
+        throw new Error('No pending key exchange found');
+      }
+      
+      // Get my signing key
+      const signingKey = await getMySigningKey();
+      
+      // Process response and create confirmation
+      const result = await processKexResponseAndCreateConfirm(
+        kexResponse,
+        pendingState.peerPublicKeys.signing,
+        pendingState.ephemeralKeyPair.privateKey,
+        signingKey,
+        pendingState.myNonce,
+        user.id
+      );
+      
+      // Store the session key
+      storeSessionKey(peerId, result.sessionKey, {
+        initiatorNonce: result.initiatorNonce,
+        responderNonce: result.responderNonce,
+        role: 'initiator'
+      });
+      
+      // Send confirmation
+      sendKexConfirm(result.confirm);
+      
+      // Clean up
+      removePendingKex(peerId);
+      ephemeralKeysRef.current.delete(peerId);
+      
+      setEncryptionStatus(prev => ({ ...prev, [peerId]: 'complete' }));
+      
+      console.log('%c🎉 Key exchange COMPLETE (initiator)', LOG_STYLES.success);
+      
+    } catch (err) {
+      console.error('%c✗ KEX_RESPONSE processing failed:', LOG_STYLES.error, err);
+      setEncryptionStatus(prev => ({ ...prev, [peerId]: 'error' }));
+    }
+  }, [user.id, getMySigningKey, LOG_STYLES]);
+
+  // Handle incoming KEX_CONFIRM (we are responder)
+  const handleKexConfirm = useCallback(async (kexConfirm) => {
+    console.log('%c📥 CHAT: Received KEX_CONFIRM', LOG_STYLES.header);
+    console.log('%c    From: ' + kexConfirm.senderId, LOG_STYLES.detail);
+    
+    const peerId = kexConfirm.senderId;
+    
+    try {
+      // Get pending state
+      const pendingState = getPendingKex(peerId);
+      if (!pendingState) {
+        throw new Error('No pending key exchange found');
+      }
+      
+      // Verify confirmation
+      await processKexConfirm(
+        kexConfirm,
+        pendingState.peerPublicKeys.signing,
+        pendingState.sessionKey,
+        pendingState.initiatorNonce,
+        pendingState.responderNonce,
+        peerId,
+        user.id
+      );
+      
+      // Now store the session key (confirmed!)
+      storeSessionKey(peerId, pendingState.sessionKey, {
+        initiatorNonce: pendingState.initiatorNonce,
+        responderNonce: pendingState.responderNonce,
+        role: 'responder'
+      });
+      
+      // Clean up
+      removePendingKex(peerId);
+      ephemeralKeysRef.current.delete(peerId);
+      
+      setEncryptionStatus(prev => ({ ...prev, [peerId]: 'complete' }));
+      
+      console.log('%c🎉 Key exchange COMPLETE (responder)', LOG_STYLES.success);
+      
+    } catch (err) {
+      console.error('%c✗ KEX_CONFIRM processing failed:', LOG_STYLES.error, err);
+      setEncryptionStatus(prev => ({ ...prev, [peerId]: 'error' }));
+    }
+  }, [user.id, LOG_STYLES]);
 
   // Socket connection management
   useEffect(() => {
@@ -110,11 +350,17 @@ function Chat({ user, onLogout }) {
     };
 
     onMessage(handleMessage);
+    
+    // Setup KEX listeners
+    onKexInit(handleKexInit);
+    onKexResponse(handleKexResponse);
+    onKexConfirm(handleKexConfirm);
 
     return () => {
       disconnect();
+      clearAllSessionKeys(); // Clear session keys on unmount
     };
-  }, [user.id]);
+  }, [user.id, handleKexInit, handleKexResponse, handleKexConfirm]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -124,12 +370,19 @@ function Chat({ user, onLogout }) {
   // Memoized handlers
   const handleSelectUser = useCallback((selectedUser) => {
     setSelectedUser(selectedUser);
-    setEncryptionStatus('pending');
-    // TODO: Initiate key exchange in Phase 3
-    setTimeout(() => setEncryptionStatus('encrypted'), 1000);
+    
+    // Check if we already have a session key
+    if (hasSessionKey(selectedUser._id)) {
+      setEncryptionStatus(prev => ({ ...prev, [selectedUser._id]: 'complete' }));
+    } else {
+      setEncryptionStatus(prev => ({ ...prev, [selectedUser._id]: 'pending' }));
+      // Initiate key exchange with the selected user
+      initiateKeyExchange(selectedUser._id, selectedUser.publicKeys);
+    }
+    
     // Focus input after selection
     setTimeout(() => inputRef.current?.focus(), 100);
-  }, []);
+  }, [initiateKeyExchange]);
 
   const handleInputChange = useCallback((e) => {
     setInputMessage(e.target.value);
@@ -179,6 +432,12 @@ function Chat({ user, onLogout }) {
     ));
   }, [currentMessages]);
 
+  // Get current encryption status for selected user
+  const currentEncryptionStatus = useMemo(() => {
+    if (!selectedUser) return 'pending';
+    return encryptionStatus[selectedUser._id] || 'pending';
+  }, [selectedUser, encryptionStatus]);
+
   return (
     <div className="chat-container">
       {/* Sidebar */}
@@ -211,7 +470,7 @@ function Chat({ user, onLogout }) {
           <>
             <ChatHeader 
               user={selectedUser} 
-              encryptionStatus={encryptionStatus} 
+              encryptionStatus={currentEncryptionStatus}
             />
 
             <div 

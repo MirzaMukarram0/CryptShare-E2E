@@ -9,6 +9,7 @@ const logSchema = new mongoose.Schema({
       'AUTH_LOGIN',
       'AUTH_LOGIN_FAILED',
       'AUTH_LOGOUT',
+      'KEY_UPDATE',
       'KEY_EXCHANGE_INIT',
       'KEY_EXCHANGE_COMPLETE',
       'KEY_EXCHANGE_FAILED',
