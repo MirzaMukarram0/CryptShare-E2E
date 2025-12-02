@@ -31,10 +31,10 @@ const upload = multer({
 // All routes require authentication
 router.use(authenticate);
 
-// POST /api/files/upload - Upload encrypted file
+// POST /api/files/upload - Upload encrypted file (supports chunked files)
 router.post('/upload', upload.single('file'), async (req, res) => {
   try {
-    const { iv, metadata, recipientId } = req.body;
+    const { iv, metadata, recipientId, chunkInfo } = req.body;
 
     if (!req.file || !iv || !metadata || !recipientId) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -47,8 +47,18 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'Invalid metadata format' });
     }
 
+    // Parse chunk info if present (for chunked files)
+    let parsedChunkInfo = null;
+    if (chunkInfo) {
+      try {
+        parsedChunkInfo = typeof chunkInfo === 'string' ? JSON.parse(chunkInfo) : chunkInfo;
+      } catch (e) {
+        console.warn('Invalid chunk info format, ignoring');
+      }
+    }
+
     // Create file record with explicit metadata fields
-    const file = await File.create({
+    const fileData = {
       sender: req.userId,
       recipient: recipientId,
       filename: req.file.filename,
@@ -56,9 +66,22 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       metadata: {
         name: parsedMetadata.name || 'unknown',
         type: parsedMetadata.type || 'application/octet-stream',
-        size: parsedMetadata.size || 0
+        size: parsedMetadata.size || 0,
+        chunked: parsedMetadata.chunked || false,
+        totalChunks: parsedMetadata.totalChunks || 0,
+        chunkSize: parsedMetadata.chunkSize || 0
       }
-    });
+    };
+
+    // Add chunk info if present
+    if (parsedChunkInfo) {
+      fileData.chunkInfo = {
+        ivs: parsedChunkInfo.ivs || [],
+        sizes: parsedChunkInfo.sizes || []
+      };
+    }
+
+    const file = await File.create(fileData);
 
     // Log file upload
     await Log.create({
@@ -68,7 +91,9 @@ router.post('/upload', upload.single('file'), async (req, res) => {
         fileId: file._id,
         recipientId,
         originalName: parsedMetadata.name,
-        size: parsedMetadata.size
+        size: parsedMetadata.size,
+        chunked: parsedMetadata.chunked || false,
+        totalChunks: parsedMetadata.totalChunks || 0
       },
       severity: 'INFO',
       success: true
@@ -103,7 +128,9 @@ router.get('/:id/info', async (req, res) => {
       iv: file.iv,
       metadata: file.metadata,
       sender: file.sender,
-      uploadedAt: file.uploadedAt
+      uploadedAt: file.uploadedAt,
+      isChunked: file.isChunked || false,
+      chunkInfo: file.chunkInfo || null
     });
 
   } catch (error) {

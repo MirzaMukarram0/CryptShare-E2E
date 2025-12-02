@@ -4,7 +4,17 @@ const mongoose = require('mongoose');
 const metadataSchema = new mongoose.Schema({
   name: { type: String, default: 'unknown' },
   type: { type: String, default: 'application/octet-stream' },
-  size: { type: Number, default: 0 }
+  size: { type: Number, default: 0 },
+  // Chunking metadata
+  chunked: { type: Boolean, default: false },
+  totalChunks: { type: Number, default: 0 },
+  chunkSize: { type: Number, default: 0 }
+}, { _id: false });
+
+// Chunk info schema for storing IVs and sizes of each chunk
+const chunkInfoSchema = new mongoose.Schema({
+  ivs: [{ type: String }],   // Array of base64-encoded IVs
+  sizes: [{ type: Number }]  // Array of chunk sizes (encrypted)
 }, { _id: false });
 
 const fileSchema = new mongoose.Schema({
@@ -23,13 +33,15 @@ const fileSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  // IV used for encryption
+  // IV used for encryption (main IV for non-chunked, first chunk IV for chunked)
   iv: {
     type: String,
     required: true
   },
   // File metadata (original name, type, size)
   metadata: metadataSchema,
+  // Chunk information (only for chunked files)
+  chunkInfo: chunkInfoSchema,
   uploadedAt: {
     type: Date,
     default: Date.now
