@@ -40,15 +40,24 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const parsedMetadata = JSON.parse(metadata);
+    let parsedMetadata;
+    try {
+      parsedMetadata = typeof metadata === 'string' ? JSON.parse(metadata) : metadata;
+    } catch (e) {
+      return res.status(400).json({ error: 'Invalid metadata format' });
+    }
 
-    // Create file record
+    // Create file record with explicit metadata fields
     const file = await File.create({
       sender: req.userId,
       recipient: recipientId,
       filename: req.file.filename,
       iv,
-      metadata: parsedMetadata
+      metadata: {
+        name: parsedMetadata.name || 'unknown',
+        type: parsedMetadata.type || 'application/octet-stream',
+        size: parsedMetadata.size || 0
+      }
     });
 
     // Log file upload
@@ -156,6 +165,28 @@ router.get('/', async (req, res) => {
 
   } catch (error) {
     console.error('Fetch files error:', error);
+    res.status(500).json({ error: 'Failed to fetch files' });
+  }
+});
+
+// GET /api/files/peer/:peerId - Get files shared with a specific peer
+router.get('/peer/:peerId', async (req, res) => {
+  try {
+    const { peerId } = req.params;
+    
+    const files = await File.find({
+      $or: [
+        { sender: req.userId, recipient: peerId },
+        { sender: peerId, recipient: req.userId }
+      ]
+    })
+    .sort({ uploadedAt: -1 })
+    .select('sender recipient metadata uploadedAt iv');
+
+    res.json(files);
+
+  } catch (error) {
+    console.error('Fetch peer files error:', error);
     res.status(500).json({ error: 'Failed to fetch files' });
   }
 });

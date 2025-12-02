@@ -159,6 +159,24 @@ export function onKexConfirm(callback) {
   });
 }
 
+// Listen for file sharing notifications
+export function onFileShared(callback) {
+  const sock = initSocket();
+  sock.off('file_shared');
+  sock.on('file_shared', (data) => {
+    console.log('[Socket] Received file_shared from:', data.from);
+    callback(data);
+  });
+}
+
+// Emit file shared notification
+export function emitFileShared(data) {
+  if (socket) {
+    console.log('[Socket] Sending file_shared to:', data.to);
+    socket.emit('file_shared', data);
+  }
+}
+
 // Disconnect socket
 export function disconnect() {
   if (socket) {

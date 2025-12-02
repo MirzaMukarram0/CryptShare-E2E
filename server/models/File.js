@@ -1,5 +1,12 @@
 const mongoose = require('mongoose');
 
+// Define metadata subdocument schema explicitly
+const metadataSchema = new mongoose.Schema({
+  name: { type: String, default: 'unknown' },
+  type: { type: String, default: 'application/octet-stream' },
+  size: { type: Number, default: 0 }
+}, { _id: false });
+
 const fileSchema = new mongoose.Schema({
   sender: {
     type: mongoose.Schema.Types.ObjectId,
@@ -21,12 +28,8 @@ const fileSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  // Encrypted metadata (original name, type, size)
-  metadata: {
-    name: String,     // Original filename
-    type: String,     // MIME type
-    size: Number      // File size in bytes
-  },
+  // File metadata (original name, type, size)
+  metadata: metadataSchema,
   uploadedAt: {
     type: Date,
     default: Date.now

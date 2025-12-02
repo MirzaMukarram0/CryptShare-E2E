@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { getUsers, getUser } from '../services/api';
-import { initSocket, joinRoom, onMessage, disconnect, onKexInit, onKexResponse, onKexConfirm, sendKexInit, sendKexResponse, sendKexConfirm, getSocket } from '../services/socket';
+import { initSocket, joinRoom, onMessage, disconnect, onKexInit, onKexResponse, onKexConfirm, sendKexInit, sendKexResponse, sendKexConfirm, getSocket, onFileShared, emitFileShared } from '../services/socket';
 import { Avatar } from './common';
 import { getPrivateKey } from '../crypto/keyStore';
 import { encryptMessage, decryptMessage } from '../crypto/encryption';
@@ -14,13 +14,13 @@ import {
 } from '../crypto/keyExchange';
 import { 
   storeSessionKey, 
-  getSessionKey, 
   hasSessionKey, 
   storePendingKex, 
   getPendingKex, 
   removePendingKex,
   clearAllSessionKeys 
 } from '../crypto/sessionKeyStore';
+import { FileUploadButton, FileShareModal, FileMessage, useFileHandler } from './FileShare';
 
 // Memoized user list item component
 const UserListItem = memo(function UserListItem({ user, isSelected, onSelect }) {
@@ -49,7 +49,19 @@ const UserListItem = memo(function UserListItem({ user, isSelected, onSelect }) 
 });
 
 // Memoized message bubble component
-const MessageBubble = memo(function MessageBubble({ message }) {
+const MessageBubble = memo(function MessageBubble({ message, onFileDownload, downloading }) {
+  // Check if this is a file message
+  if (message.type === 'file') {
+    return (
+      <FileMessage
+        file={message.file}
+        sent={message.sent}
+        onDownload={onFileDownload}
+        downloading={downloading}
+      />
+    );
+  }
+  
   return (
     <div className={`message ${message.sent ? 'sent' : 'received'} ${message.error ? 'error' : ''}`}>
       <div className="message-bubble">
@@ -103,10 +115,14 @@ function Chat({ user, onLogout }) {
   const [messages, setMessages] = useState({});
   const [inputMessage, setInputMessage] = useState('');
   const [encryptionStatus, setEncryptionStatus] = useState({});
+  const [showFileModal, setShowFileModal] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const ephemeralKeysRef = useRef(new Map()); // Store ephemeral keys during exchange
   const conversationKeysRef = useRef(new Map()); // Cache conversation keys
+  
+  // File download handler
+  const { downloading, handleDownload } = useFileHandler(user.id);
 
   // Console logging styles
   const LOG_STYLES = useMemo(() => ({
@@ -386,6 +402,26 @@ function Chat({ user, onLogout }) {
     onKexInit(handleKexInit);
     onKexResponse(handleKexResponse);
     onKexConfirm(handleKexConfirm);
+    
+    // Setup file shared listener
+    onFileShared((data) => {
+      console.log('%c📁 File received:', 'color: #f97316; font-weight: bold;', data.metadata.name);
+      
+      // Add file message to chat
+      setMessages(prev => ({
+        ...prev,
+        [data.from]: [...(prev[data.from] || []), {
+          type: 'file',
+          file: {
+            _id: data.fileId,
+            metadata: data.metadata,
+            sender: data.from
+          },
+          sent: false,
+          timestamp: data.timestamp
+        }]
+      }));
+    });
 
     return () => {
       disconnect();
@@ -462,6 +498,40 @@ function Chat({ user, onLogout }) {
     }
   }, [inputMessage, selectedUser, getConversationKey]);
 
+  // Handle file share completion
+  const handleFileShared = useCallback((data) => {
+    console.log('%c📁 File shared:', 'color: #f97316; font-weight: bold;', data.metadata.name);
+    
+    // Add file message to local chat
+    setMessages(prev => ({
+      ...prev,
+      [selectedUser._id]: [...(prev[selectedUser._id] || []), {
+        type: 'file',
+        file: {
+          _id: data.fileId,
+          metadata: data.metadata,
+          sender: user.id
+        },
+        sent: true,
+        timestamp: Date.now()
+      }]
+    }));
+    
+    // Notify recipient via socket
+    emitFileShared({
+      to: selectedUser._id,
+      fileId: data.fileId,
+      metadata: data.metadata,
+      timestamp: Date.now()
+    });
+  }, [selectedUser, user.id]);
+
+  // Handle file download
+  const handleFileDownload = useCallback((file) => {
+    const senderId = file.sender || (file.sent ? user.id : selectedUser?._id);
+    handleDownload(file, senderId);
+  }, [handleDownload, user.id, selectedUser]);
+
   // Fetch encrypted message history and decrypt using conversation key
   const loadMessageHistory = useCallback(async (peerId) => {
     console.log('%c📂 Loading message history...', 'color: #3b82f6; font-weight: bold;');
@@ -526,8 +596,64 @@ function Chat({ user, onLogout }) {
   useEffect(() => {
     if (selectedUser) {
       loadMessageHistory(selectedUser._id);
+      loadFileHistory(selectedUser._id);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedUser, loadMessageHistory]);
+  
+  // Load file history for a peer
+  const loadFileHistory = useCallback(async (peerId) => {
+    try {
+      const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+      const response = await fetch(`${API_URL}/files/peer/${peerId}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (!response.ok) return;
+      
+      const files = await response.json();
+      
+      if (files.length === 0) return;
+      
+      console.log('%c📁 Found ' + files.length + ' shared files', 'color: #f97316;');
+      
+      // Convert to file messages and add to messages state
+      const fileMessages = files.map(file => ({
+        type: 'file',
+        file: {
+          _id: file._id,
+          metadata: file.metadata,
+          sender: file.sender
+        },
+        sent: file.sender === user.id,
+        timestamp: new Date(file.uploadedAt).getTime()
+      }));
+      
+      // Merge file messages with existing messages (avoiding duplicates)
+      setMessages(prev => {
+        const existing = prev[peerId] || [];
+        const existingFileIds = new Set(
+          existing.filter(m => m.type === 'file').map(m => m.file?._id)
+        );
+        const newFiles = fileMessages.filter(fm => !existingFileIds.has(fm.file._id));
+        
+        if (newFiles.length === 0) return prev;
+        
+        // Merge and sort by timestamp
+        const merged = [...existing, ...newFiles].sort((a, b) => a.timestamp - b.timestamp);
+        
+        return {
+          ...prev,
+          [peerId]: merged
+        };
+      });
+      
+    } catch (error) {
+      console.error('Failed to load file history:', error);
+    }
+  }, [user.id]);
 
   // Memoized current messages
   const currentMessages = useMemo(() => {
@@ -549,9 +675,14 @@ function Chat({ user, onLogout }) {
   // Memoized message list
   const messageList = useMemo(() => {
     return currentMessages.map((msg, index) => (
-      <MessageBubble key={`${msg.timestamp}-${index}`} message={msg} />
+      <MessageBubble 
+        key={`${msg.timestamp}-${index}`} 
+        message={msg}
+        onFileDownload={handleFileDownload}
+        downloading={downloading[msg.file?._id]}
+      />
     ));
-  }, [currentMessages]);
+  }, [currentMessages, handleFileDownload, downloading]);
 
   // Get current encryption status for selected user
   const currentEncryptionStatus = useMemo(() => {
@@ -609,6 +740,10 @@ function Chat({ user, onLogout }) {
               onSubmit={handleSendMessage}
               aria-label="Send message"
             >
+              <FileUploadButton
+                onFileSelect={() => setShowFileModal(true)}
+                disabled={false}
+              />
               <input
                 ref={inputRef}
                 type="text"
@@ -626,6 +761,16 @@ function Chat({ user, onLogout }) {
                 &#10148;
               </button>
             </form>
+            
+            {/* File Share Modal */}
+            <FileShareModal
+              isOpen={showFileModal}
+              onClose={() => setShowFileModal(false)}
+              myUserId={user.id}
+              recipientId={selectedUser?._id}
+              recipientName={selectedUser?.username}
+              onFileShared={handleFileShared}
+            />
           </>
         ) : (
           <EmptyState username={user.username} />

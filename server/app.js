@@ -95,15 +95,59 @@ io.on('connection', (socket) => {
     io.to(data.receiverId).emit('kex_confirm', data);
   });
 
+  // File sharing notification
+  socket.on('file_shared', (data) => {
+    const { to, fileId, metadata, timestamp } = data;
+    
+    console.log(`[File] File shared from ${socket.userId} to ${to}: ${metadata.name}`);
+    
+    // Notify recipient about shared file
+    io.to(to).emit('file_shared', {
+      from: socket.userId,
+      fileId,
+      metadata,
+      timestamp
+    });
+  });
+
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
   });
 });
 
-// Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/cryptshare-e2e')
-  .then(() => console.log('Connected to MongoDB'))
-  .catch(err => console.error('MongoDB connection error:', err));
+// Connect to MongoDB with retry logic
+const connectDB = async () => {
+  const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/cryptshare-e2e';
+  
+  const options = {
+    serverSelectionTimeoutMS: 30000,
+    socketTimeoutMS: 45000,
+    family: 4, // Use IPv4, skip trying IPv6
+    maxPoolSize: 10,
+    retryWrites: true
+  };
+  
+  try {
+    await mongoose.connect(mongoUri, options);
+    console.log('Connected to MongoDB');
+  } catch (err) {
+    console.error('MongoDB connection error:', err.message);
+    console.log('Retrying connection in 5 seconds...');
+    setTimeout(connectDB, 5000);
+  }
+};
+
+// Handle MongoDB connection events
+mongoose.connection.on('error', (err) => {
+  console.error('MongoDB error:', err.message);
+});
+
+mongoose.connection.on('disconnected', () => {
+  console.log('MongoDB disconnected. Attempting to reconnect...');
+  setTimeout(connectDB, 5000);
+});
+
+connectDB();
 
 // Start server
 const PORT = process.env.PORT || 5000;
