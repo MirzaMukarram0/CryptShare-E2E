@@ -6,8 +6,14 @@
  * This script demonstrates:
  * 1. How MITM attack works against plain ECDH
  * 2. How digital signatures (ECDSA) prevent MITM
+ * 3. How CryptShare-KEX prevents MITM
  * 
+ * This script is used to demonstrate the vulnerabilities of the CryptShare-KEX protocol and how digital signatures prevent MITM attacks.
  * Run with: node mitm-demo.js
+ * 
+ * 
+ * 
+ * 
  */
 
 const crypto = require('crypto');
@@ -200,6 +206,7 @@ function demoMITMWithoutSignatures() {
 // ============================================
 // DEMO 2: MITM ATTACK FAILS (With Signatures)
 // ============================================
+
 function demoMITMWithSignatures() {
   printBanner('DEMO 2: MITM ATTACK WITH SIGNATURES (CryptShare-KEX)');
   
