@@ -77,6 +77,9 @@ export async function sendEncryptedMessage(recipientId, plaintext) {
 // Listen for incoming messages
 export function onMessage(callback) {
   if (socket) {
+    // Remove any existing listener to prevent duplicates
+    socket.off('message');
+    
     socket.on('message', async (data) => {
       console.log('[Socket] Received encrypted message from:', data.from);
       

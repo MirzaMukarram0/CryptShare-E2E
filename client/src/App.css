@@ -207,6 +207,22 @@
   text-align: center;
 }
 
+.file-time {
+  font-size: 0.65rem;
+  opacity: 0.7;
+  text-align: right;
+  margin-top: 6px;
+  display: block;
+}
+
+.file-message.sent .file-time {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.file-message.received .file-time {
+  color: var(--text-muted);
+}
+
 /* File Share Modal */
 .file-share-modal-overlay {
   position: fixed;

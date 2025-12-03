@@ -103,10 +103,18 @@ export const FileMessage = memo(function FileMessage({
   file, 
   sent, 
   onDownload,
-  downloading = false 
+  downloading = false,
+  timestamp
 }) {
   const icon = getFileIcon(file.metadata?.type);
   const isImage = file.metadata?.type?.startsWith('image/');
+  
+  // Format timestamp to readable time
+  const formatTime = (ts) => {
+    if (!ts) return '';
+    const date = new Date(ts);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
   
   return (
     <div className={`file-message ${sent ? 'sent' : 'received'}`}>
@@ -130,6 +138,9 @@ export const FileMessage = memo(function FileMessage({
           <div className="file-preview-hint">
             🔒 Encrypted image - download to view
           </div>
+        )}
+        {timestamp && (
+          <span className="file-time">{formatTime(timestamp)}</span>
         )}
       </div>
     </div>

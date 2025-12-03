@@ -52,6 +52,12 @@ const UserListItem = memo(function UserListItem({ user, isSelected, onSelect }) 
 // Memoized message bubble component
 const MessageBubble = memo(function MessageBubble({ message, onFileDownload, downloading }) {
   // Check if this is a file message
+  // Format timestamp to readable time
+  const formatTime = (timestamp) => {
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
   if (message.type === 'file') {
     return (
       <FileMessage
@@ -59,6 +65,7 @@ const MessageBubble = memo(function MessageBubble({ message, onFileDownload, dow
         sent={message.sent}
         onDownload={onFileDownload}
         downloading={downloading}
+        timestamp={message.timestamp}
       />
     );
   }
@@ -66,8 +73,9 @@ const MessageBubble = memo(function MessageBubble({ message, onFileDownload, dow
   return (
     <div className={`message ${message.sent ? 'sent' : 'received'} ${message.error ? 'error' : ''}`}>
       <div className="message-bubble">
-        {message.text}
+        <span className="message-text">{message.text}</span>
         {message.error && <span className="message-error-icon" title="Decryption failed"> ⚠️</span>}
+        <span className="message-time">{formatTime(message.timestamp)}</span>
       </div>
     </div>
   );
