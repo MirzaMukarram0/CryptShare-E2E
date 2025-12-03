@@ -1,0 +1,133 @@
+<mxfile host="app.diagrams.net" modified="2025-12-03T00:00:00Z" agent="cryptshare-e2e-client-flow" version="20.8.3">
+  <diagram id="clientFlows" name="Client-Side Flows">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <!-- Default root / layer cells -->
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- Swimlane: Auth Flow -->
+        <mxCell id="authLane" value="Auth &amp; Key Management Flow (App.js, Login.js, Register.js, api.js, keyStore.js, keys.js)" style="swimlane;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeLast=0;collapsible=0;rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="740" height="360" as="geometry"/>
+        </mxCell>
+
+        <!-- Auth nodes -->
+        <mxCell id="auth1" value="App Init&#10;(App.js)&#10;- Read token &amp; user from localStorage&#10;- If present, restore user state&#10;- Route: /chat or /login" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="authLane">
+          <mxGeometry x="20" y="40" width="320" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="auth2" value="User Registration&#10;(Register.js)&#10;1. User fills email/username/password&#10;2. Frontend validates fields&#10;3. Generate ECDSA signing key pair&#10;4. Generate ECDH key-exchange key pair (keys.js)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="authLane">
+          <mxGeometry x="380" y="40" width="320" height="110" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="auth3" value="Register Request&#10;(Register.js ➜ api.js /auth/register)&#10;- Export publicSigningKey + publicKeyExchangeKey (JWK)&#10;- POST to /auth/register with creds + public keys&#10;- On success, export private keys&#10;- Store private keys in IndexedDB (keyStore.js)&#10;- Cache signingKey &amp; keyExchangeKey in sessionStorage&#10;- Call onLogin(user, token)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="authLane">
+          <mxGeometry x="20" y="140" width="340" height="140" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="auth4" value="User Login&#10;(Login.js)&#10;1. User submits email/password&#10;2. POST /auth/login via api.js&#10;3. On success, try to load private signing &amp; keyExchange keys from IndexedDB&#10;4. If not found on this device:&#10;   - Generate fresh key pairs&#10;   - Export public keys and PUT /auth/keys&#10;   - Save private keys to IndexedDB&#10;5. Cache signingKey &amp; keyExchangeKey in sessionStorage&#10;6. Save token + user in localStorage &amp; call onLogin" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="authLane">
+          <mxGeometry x="380" y="170" width="340" height="170" as="geometry"/>
+        </mxCell>
+
+        <!-- Auth edges -->
+        <mxCell id="authEdge1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;" edge="1" parent="authLane" source="auth1" target="auth2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="authEdge2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6c8ebf;" edge="1" parent="authLane" source="auth2" target="auth3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="authEdge3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;strokeColor=#6c8ebf;" edge="1" parent="authLane" source="auth1" target="auth4">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Swimlane: Chat & E2E Message Flow -->
+        <mxCell id="chatLane" value="Chat &amp; E2E Messaging Flow (Chat.js, socket.js, conversationKey.js, encryption.js, replayProtection.js, keyExchange.js, sessionKeyStore.js)" style="swimlane;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeLast=0;collapsible=0;rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="20" y="400" width="1550" height="360" as="geometry"/>
+        </mxCell>
+
+        <!-- Chat nodes -->
+        <mxCell id="chat1" value="Open Chat View&#10;(Chat.js)&#10;- initSocket() &amp; joinRoom(user.id)&#10;- Fetch other users via getUsers()&#10;- Wait for contact selection" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="chatLane">
+          <mxGeometry x="20" y="40" width="280" height="100" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="chat2" value="Select Peer&#10;(Chat.js handleSelectUser)&#10;- Set selectedUser&#10;- If sessionKey exists in sessionKeyStore: encryptionStatus = complete&#10;- Else: encryptionStatus = pending&#10;  ➜ initiateKeyExchange(peerId, peerPublicKeys)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="chatLane">
+          <mxGeometry x="330" y="40" width="310" height="120" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="chat3" value="CryptShare-KEX Session Establishment&#10;(keyExchange.js + Chat.js + socket.js)&#10;1. Initiator: generateEphemeralKeyPair()&#10;2. Initiator: createKexInit() signed with long‑term ECDSA key&#10;3. Socket emit 'kex_init' to peer&#10;4. Responder: verify timestamp &amp; signature, compute shared secret, derive sessionKey (HKDF)&#10;   ➜ createKexResponse() and emit 'kex_response'&#10;5. Initiator: verify response, compute shared secret, derive same sessionKey&#10;   ➜ createKexConfirm() and emit 'kex_confirm'&#10;6. Responder: verify confirmation hash&#10;7. Both sides store sessionKey in sessionKeyStore &amp; set encryptionStatus=complete" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="chatLane">
+          <mxGeometry x="670" y="40" width="520" height="200" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="chat4" value="Load History&#10;(Chat.js loadMessageHistory + loadFileHistory)&#10;- Fetch /messages/:peerId with JWT&#10;- Use deriveConversationKey(user.id, peerPublicKeys.keyExchange) to decrypt each ciphertext via AES‑GCM&#10;- Fetch /files/peer/:peerId, map to file messages" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="chatLane">
+          <mxGeometry x="1210" y="40" width="320" height="150" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="chat5" value="Send Message&#10;(Chat.js handleSendMessage)&#10;1. User types plaintext&#10;2. Get or derive conversationKey(peerId, peerPublicKeys)&#10;3. encryptMessage(conversationKey, plaintext) ➜ AES‑256‑GCM {ciphertext, iv}&#10;4. Build conversationId = sorted(user.id, peerId)&#10;5. addReplayProtection(message, conversationId) adds nonce + timestamp + sequence&#10;6. socket.emit('message', protectedMessage)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="chatLane">
+          <mxGeometry x="20" y="200" width="420" height="170" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="chat6" value="Receive Message&#10;(socket.js onMessage ➜ Chat.js)&#10;1. Socket 'message' event fires with {from, ciphertext, iv, nonce, timestamp, sequence}&#10;2. Derive or load conversationKey(currentUserId, from, senderPublicKeyExchange)&#10;3. decryptMessage(conversationKey, ciphertext, iv)&#10;4. If decryption OK: pass plaintext to Chat.js and append to messages state&#10;5. If decryption fails: mark message as error and display '[Failed to decrypt]'" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="chatLane">
+          <mxGeometry x="470" y="260" width="460" height="170" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="chat7" value="Replay Protection&#10;(replayProtection.js + server)&#10;- Outgoing: addReplayProtection() adds:&#10;   • 128‑bit random nonce&#10;   • Millisecond timestamp&#10;   • Monotonic per‑conversation sequence&#10;- Incoming: validateReplayProtection() tracks used nonces and per‑conversation sequence, rejects stale or out‑of‑order messages&#10;- Server also enforces its own replay detection and emits 'message_error' on violations" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="chatLane">
+          <mxGeometry x="960" y="230" width="570" height="180" as="geometry"/>
+        </mxCell>
+
+        <!-- Chat edges -->
+        <mxCell id="chatEdge1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#82b366;" edge="1" parent="chatLane" source="chat1" target="chat2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="chatEdge2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#82b366;" edge="1" parent="chatLane" source="chat2" target="chat3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="chatEdge3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#82b366;" edge="1" parent="chatLane" source="chat3" target="chat4">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="chatEdge4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;strokeColor=#82b366;" edge="1" parent="chatLane" source="chat2" target="chat5">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="chatEdge5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;strokeColor=#82b366;" edge="1" parent="chatLane" source="chat5" target="chat6">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="chatEdge6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;strokeColor=#82b366;" edge="1" parent="chatLane" source="chat5" target="chat7">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Swimlane: Encrypted File Sharing Flow -->
+        <mxCell id="fileLane" value="Encrypted File Sharing Flow (FileShare.js, fileService.js, fileEncryption.js, conversationKey.js)" style="swimlane;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeLast=0;collapsible=0;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="780" y="20" width="790" height="360" as="geometry"/>
+        </mxCell>
+
+        <!-- File flow nodes -->
+        <mxCell id="file1" value="Open File Share Modal&#10;(FileShareModal in FileShare.js)&#10;- Triggered from Chat message input (FileUploadButton)&#10;- User selects local file" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;" vertex="1" parent="fileLane">
+          <mxGeometry x="20" y="40" width="320" height="110" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="file2" value="Encrypt &amp; Upload File&#10;(fileService.js uploadEncryptedFile)&#10;1. Fetch recipient public key via getUser(recipientId)&#10;2. getOrCreateConversationKey(myUserId, recipientId, publicKeyExchange)&#10;3. If file &gt; threshold: encryptFileInChunks()&#10;   - Each chunk AES‑GCM with fresh IV&#10;   - Combine encrypted chunks; record IVs &amp; sizes&#10;4. Else: encryptFile() once with AES‑GCM&#10;5. Build metadata (name, type, size, chunk info)&#10;6. POST /files/upload with: encrypted bytes, iv, metadata, recipientId, JWT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;" vertex="1" parent="fileLane">
+          <mxGeometry x="370" y="40" width="380" height="210" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="file3" value="Notify Recipient&#10;(Chat.js handleFileShared + socket.js emitFileShared)&#10;- After server returns fileId, Chat adds local 'file' message to chat&#10;- emitFileShared({to, fileId, metadata, timestamp}) over socket&#10;- Recipient's onFileShared handler inserts a 'file' message in their chat" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;" vertex="1" parent="fileLane">
+          <mxGeometry x="20" y="180" width="360" height="150" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="file4" value="Download &amp; Decrypt File&#10;(fileService.js downloadAndDecryptFile)&#10;1. User clicks 'Download &amp; Decrypt' (FileMessage)&#10;2. GET /files/:fileId/info to obtain iv, metadata, sender, optional chunkInfo&#10;3. Fetch sender public key &amp; derive conversationKey(myUserId, senderId, keyExchangePublic)&#10;4. GET /files/:fileId/download to obtain encrypted bytes&#10;5. If chunked: decryptFileInChunks() using stored IVs &amp; sizes&#10;   Else: decryptFile(conversationKey, encryptedData, iv)&#10;6. downloadDecryptedFile() creates Blob and triggers browser download" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;" vertex="1" parent="fileLane">
+          <mxGeometry x="410" y="260" width="360" height="210" as="geometry"/>
+        </mxCell>
+
+        <!-- File edges -->
+        <mxCell id="fileEdge1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#d6b656;" edge="1" parent="fileLane" source="file1" target="file2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="fileEdge2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#d6b656;" edge="1" parent="fileLane" source="file2" target="file3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="fileEdge3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;strokeColor=#d6b656;" edge="1" parent="fileLane" source="file3" target="file4">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
+

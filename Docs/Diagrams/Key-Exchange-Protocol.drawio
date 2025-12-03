@@ -1,0 +1,109 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36" version="29.2.2">
+  <diagram name="CryptShare-KEX Protocol" id="4b5XZytVfd4PP-dPiP5O">
+    <mxGraphModel dx="2022" dy="1217" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="IxniNIjqzervXeoCsV53-1" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1" value="CryptShare-KEX: 3-Message Authenticated Key Exchange Protocol" vertex="1">
+          <mxGeometry height="40" width="600" x="300" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-2" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;fontColor=#666666" value="ECDH P-256 + ECDSA P-256 + HKDF-SHA256" vertex="1">
+          <mxGeometry height="30" width="600" x="300" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-3" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontStyle=1" value="Mukarram (Initiator)" vertex="1">
+          <mxGeometry height="120" width="60" x="150" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-4" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontStyle=1" value="Sarmad (Responder)" vertex="1">
+          <mxGeometry height="120" width="60" x="990" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-5" edge="1" parent="1" style="endArrow=none;dashed=1;html=1;strokeWidth=2;strokeColor=#82b366" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="180" y="260" as="sourcePoint" />
+            <mxPoint x="180" y="1450" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-6" edge="1" parent="1" style="endArrow=none;dashed=1;html=1;strokeWidth=2;strokeColor=#6c8ebf" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="1020" y="260" as="sourcePoint" />
+            <mxPoint x="1020" y="1450" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-7" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontStyle=1" value="PHASE 1: Initial Setup (Registration)" vertex="1">
+          <mxGeometry height="40" width="400" x="400" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-8" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;spacingLeft=10;fontSize=12" value="Generate Long-Term Keys:&#xa;• ECDSA P-256 (Signing)&#xa;• ECDH P-256 (Key Exchange)&#xa;Store Private Keys in IndexedDB" vertex="1">
+          <mxGeometry height="80" width="250" x="220" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-9" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;verticalAlign=top;spacingLeft=10;fontSize=12" value="Generate Long-Term Keys:&#xa;• ECDSA P-256 (Signing)&#xa;• ECDH P-256 (Key Exchange)&#xa;Store Private Keys in IndexedDB" vertex="1">
+          <mxGeometry height="80" width="250" x="730" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-10" edge="1" parent="1" style="endArrow=classic;html=1;strokeWidth=2;strokeColor=#82b366" value="Public Keys">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="180" y="450" as="sourcePoint" />
+            <mxPoint x="580" y="450" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-11" edge="1" parent="1" style="endArrow=classic;html=1;strokeWidth=2;strokeColor=#6c8ebf" value="Public Keys">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="1020" y="450" as="sourcePoint" />
+            <mxPoint x="620" y="450" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-12" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;fontStyle=1" value="Server&#xa;(Stores Public Keys Only)" vertex="1">
+          <mxGeometry height="80" width="120" x="540" y="400" as="geometry" />
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-13" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontStyle=1" value="PHASE 2: KEX_INIT (Message 1)" vertex="1">
+          <mxGeometry height="40" width="400" x="400" y="520" as="geometry" />
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-14" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;spacingLeft=10;fontSize=11" value="1. Generate Ephemeral ECDH Key Pair&lt;br&gt;2. Generate Nonce (16 bytes)&lt;br&gt;3. Create KEX_INIT payload:&lt;br&gt;   • Ephemeral Public Key&lt;br&gt;   • Nonce&lt;br&gt;   • Timestamp&lt;br&gt;   • Mukarram ID → Sarmad ID&lt;br&gt;4. Sign payload with ECDSA" vertex="1">
+          <mxGeometry height="140" width="250" x="50" y="580" as="geometry" />
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-15" edge="1" parent="1" style="endArrow=classic;html=1;strokeWidth=3;strokeColor=#9673a6;fontSize=12;fontStyle=1" value="KEX_INIT">
+          <mxGeometry height="50" relative="1" width="50" x="-0.2" y="10" as="geometry">
+            <mxPoint as="offset" />
+            <mxPoint x="180" y="750" as="sourcePoint" />
+            <mxPoint x="1020" y="750" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-16" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=left;verticalAlign=top;spacingLeft=10;fontSize=10;fontFamily=Courier New" value="{&#xa;  type: &#39;KEX_INIT&#39;,&#xa;  ephemeralPublicKey: {...},&#xa;  nonce: &#39;random16bytes&#39;,&#xa;  timestamp: Date.now(),&#xa;  signature: &#39;ECDSA-SHA256&#39;&#xa;}" vertex="1">
+          <mxGeometry height="100" width="300" x="450" y="700" as="geometry" />
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-17" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;verticalAlign=top;spacingLeft=10;fontSize=11" value="1. Verify Timestamp (±30s window)&lt;br&gt;2. Verify ECDSA Signature&lt;br&gt;   → Authenticate Mukarram&lt;br&gt;3. Generate Ephemeral ECDH Key Pair&lt;br&gt;4. Compute ECDH Shared Secret:&lt;br&gt;   Sarmad&#39;s Private × Mukarram&#39;s Public&lt;br&gt;5. Generate Nonce (16 bytes)" vertex="1">
+          <mxGeometry height="120" width="280" x="900" y="830" as="geometry" />
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-18" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontStyle=1" value="PHASE 3: KEX_RESPONSE (Message 2)" vertex="1">
+          <mxGeometry height="40" width="400" x="400" y="980" as="geometry" />
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-19" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;verticalAlign=top;spacingLeft=10;fontSize=11" value="1. Create KEX_RESPONSE payload:&lt;br&gt;   • Ephemeral Public Key&lt;br&gt;   • Nonce&lt;br&gt;   • Timestamp&lt;br&gt;   • Sarmad ID → Mukarram ID&lt;br&gt;2. Sign payload with ECDSA&lt;br&gt;3. Derive Session Key:&lt;br&gt;   HKDF(SharedSecret, Nonce1||Nonce2)" vertex="1">
+          <mxGeometry height="140" width="280" x="900" y="1040" as="geometry" />
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-20" edge="1" parent="1" style="endArrow=classic;html=1;strokeWidth=3;strokeColor=#d79b00;fontSize=12;fontStyle=1" value="KEX_RESPONSE">
+          <mxGeometry height="50" relative="1" width="50" x="0.2" y="-10" as="geometry">
+            <mxPoint as="offset" />
+            <mxPoint x="1020" y="1200" as="sourcePoint" />
+            <mxPoint x="180" y="1200" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-21" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=left;verticalAlign=top;spacingLeft=10;fontSize=10;fontFamily=Courier New" value="{&lt;br&gt;  type: &#39;KEX_RESPONSE&#39;,&lt;br&gt;  ephemeralPublicKey: {...},&lt;br&gt;  nonce: &#39;random16bytes&#39;,&lt;br&gt;  timestamp: Date.now(),&lt;br&gt;  initiatorNonce: Mukarram&#39;s nonce,&lt;br&gt;  signature: &#39;ECDSA-SHA256&#39;&lt;br&gt;}" vertex="1">
+          <mxGeometry height="110" width="300" x="450" y="1150" as="geometry" />
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-22" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;spacingLeft=10;fontSize=11" value="1. Verify Timestamp&lt;br&gt;2. Verify ECDSA Signature&lt;br&gt;   → Authenticate Sarmad&lt;br&gt;3. Compute ECDH Shared Secret:&lt;br&gt;   Mukarram&#39;s Private × Sarmad&#39;s Public&lt;br&gt;4. Derive Session Key:&lt;br&gt;   HKDF(SharedSecret, Nonce1||Nonce2)&lt;br&gt;5. Create Confirmation Hash" vertex="1">
+          <mxGeometry height="140" width="280" x="20" y="1280" as="geometry" />
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-24" edge="1" parent="1" style="endArrow=classic;html=1;strokeWidth=3;strokeColor=#82b366;fontSize=12;fontStyle=1" value="KEX_CONFIRM">
+          <mxGeometry height="50" relative="1" width="50" x="-0.2" y="10" as="geometry">
+            <mxPoint as="offset" />
+            <mxPoint x="180" y="1510" as="sourcePoint" />
+            <mxPoint x="1020" y="1510" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-26" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;verticalAlign=top;spacingLeft=10;fontSize=11;fontStyle=1" value="1. Verify Timestamp&#xa;2. Verify ECDSA Signature&#xa;3. Verify Confirmation Hash&#xa;   → Proves both have same key&#xa;✓ KEY EXCHANGE COMPLETE" vertex="1">
+          <mxGeometry height="110" width="280" x="900" y="1300" as="geometry" />
+        </mxCell>
+        <mxCell id="IxniNIjqzervXeoCsV53-27" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;fontSize=14;fontStyle=1;align=center" value="🎉 SECURE SESSION ESTABLISHED&#xa;Both parties have identical AES-256-GCM session key&#xa;Ready for encrypted communication" vertex="1">
+          <mxGeometry height="80" width="500" x="300" y="1320" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
