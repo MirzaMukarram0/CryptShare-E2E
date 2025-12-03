@@ -306,7 +306,7 @@ export function FileShareModal({
 export function useFileHandler(myUserId) {
   const [downloading, setDownloading] = useState({});
   
-  const handleDownload = useCallback(async (file, senderId) => {
+  const handleDownload = useCallback(async (file, peerId) => {
     const fileId = file._id || file.fileId;
     
     if (downloading[fileId]) return;
@@ -317,7 +317,7 @@ export function useFileHandler(myUserId) {
       await downloadAndDecryptFile(
         myUserId,
         fileId,
-        senderId,
+        peerId,  // Peer ID for conversation key derivation
         () => {} // Progress callback
       );
     } catch (error) {

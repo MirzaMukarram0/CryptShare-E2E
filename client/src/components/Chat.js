@@ -533,10 +533,17 @@ function Chat({ user, onLogout }) {
   }, [selectedUser, user.id]);
 
   // Handle file download
+  // For conversation key derivation, we always need the PEER's ID (not the file sender)
+  // Because: ECDH(myPrivate, peerPublic) = ECDH(peerPrivate, myPublic)
   const handleFileDownload = useCallback((file) => {
-    const senderId = file.sender || (file.sent ? user.id : selectedUser?._id);
-    handleDownload(file, senderId);
-  }, [handleDownload, user.id, selectedUser]);
+    // Always use selectedUser._id as the peer for key derivation
+    const peerId = selectedUser?._id;
+    if (!peerId) {
+      console.error('No peer selected for file download');
+      return;
+    }
+    handleDownload(file, peerId);
+  }, [handleDownload, selectedUser]);
 
   // Fetch encrypted message history and decrypt using conversation key
   const loadMessageHistory = useCallback(async (peerId) => {
@@ -567,6 +574,7 @@ function Chat({ user, onLogout }) {
           try {
             const plaintext = await decryptMessage(conversationKey, msg.ciphertext, msg.iv);
             return {
+              id: msg._id, // Add ID for deduplication
               text: plaintext,
               sent: msg.sender === user.id,
               timestamp: new Date(msg.timestamp).getTime(),
@@ -575,6 +583,7 @@ function Chat({ user, onLogout }) {
           } catch (error) {
             console.error('Failed to decrypt message:', error);
             return {
+              id: msg._id,
               text: '[Failed to decrypt]',
               sent: msg.sender === user.id,
               timestamp: new Date(msg.timestamp).getTime(),
@@ -584,11 +593,18 @@ function Chat({ user, onLogout }) {
         })
       );
       
-      // Add to messages state
-      setMessages(prev => ({
-        ...prev,
-        [peerId]: decryptedMessages
-      }));
+      // Merge with existing messages (preserve files, avoid duplicates)
+      setMessages(prev => {
+        const existing = prev[peerId] || [];
+        // Keep only file messages from existing
+        const existingFiles = existing.filter(m => m.type === 'file');
+        // Merge text messages and files, sort by timestamp
+        const merged = [...decryptedMessages, ...existingFiles].sort((a, b) => a.timestamp - b.timestamp);
+        return {
+          ...prev,
+          [peerId]: merged
+        };
+      });
       
       console.log('%c✓ Message history loaded and decrypted', 'color: #22c55e; font-weight: bold;');
       
@@ -601,8 +617,11 @@ function Chat({ user, onLogout }) {
   // We can use conversation keys (derived from long-term keys) even before session key exchange
   useEffect(() => {
     if (selectedUser) {
-      loadMessageHistory(selectedUser._id);
-      loadFileHistory(selectedUser._id);
+      // Load sequentially to avoid race conditions with setMessages
+      (async () => {
+        await loadMessageHistory(selectedUser._id);
+        await loadFileHistory(selectedUser._id);
+      })();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedUser, loadMessageHistory]);
@@ -640,14 +659,18 @@ function Chat({ user, onLogout }) {
       // Merge file messages with existing messages (avoiding duplicates)
       setMessages(prev => {
         const existing = prev[peerId] || [];
+        
+        // Get existing file IDs to avoid duplicates
         const existingFileIds = new Set(
           existing.filter(m => m.type === 'file').map(m => m.file?._id)
         );
+        
+        // Filter out files that already exist
         const newFiles = fileMessages.filter(fm => !existingFileIds.has(fm.file._id));
         
         if (newFiles.length === 0) return prev;
         
-        // Merge and sort by timestamp
+        // Keep all existing messages (text + existing files) and add new files
         const merged = [...existing, ...newFiles].sort((a, b) => a.timestamp - b.timestamp);
         
         return {

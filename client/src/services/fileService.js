@@ -259,10 +259,10 @@ export async function uploadEncryptedFile(myUserId, recipientId, file, onProgres
  * Download and decrypt a file (handles both chunked and single files)
  * @param {string} myUserId - Current user's ID
  * @param {string} fileId - File ID to download
- * @param {string} senderId - ID of the user who sent the file (for key derivation)
+ * @param {string} peerId - ID of the PEER user (for conversation key derivation)
  * @param {Function} onProgress - Progress callback
  */
-export async function downloadAndDecryptFile(myUserId, fileId, senderId, onProgress = () => {}) {
+export async function downloadAndDecryptFile(myUserId, fileId, peerId, onProgress = () => {}) {
   console.log('%c📥 DOWNLOADING ENCRYPTED FILE', LOG_STYLES.header);
   console.log('%c━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', LOG_STYLES.detail);
   console.log('%c    File ID: ' + fileId, LOG_STYLES.info);
@@ -290,18 +290,19 @@ export async function downloadAndDecryptFile(myUserId, fileId, senderId, onProgr
     console.log('%c    Mode: ' + (isChunked ? 'CHUNKED (' + metadata.totalChunks + ' chunks)' : 'SINGLE'), LOG_STYLES.detail);
     onProgress(5);
     
-    // Use sender ID from file info if not provided
-    const otherUserId = senderId || sender;
+    // Use peerId for conversation key derivation
+    // Conversation key is deterministic: ECDH(myPrivate, peerPublic) = ECDH(peerPrivate, myPublic)
+    const otherUserId = peerId || sender;
     
-    // Get sender's public key for conversation key derivation
-    console.log('%c[2] Fetching sender public key...', LOG_STYLES.info);
-    const senderData = await getUser(otherUserId);
-    const senderPublicKey = senderData.publicKeys.keyExchange;
+    // Get peer's public key for conversation key derivation
+    console.log('%c[2] Fetching peer public key...', LOG_STYLES.info);
+    const peerData = await getUser(otherUserId);
+    const peerPublicKey = peerData.publicKeys.keyExchange;
     onProgress(10);
     
     // Get or derive conversation key
     console.log('%c[3] Deriving conversation key...', LOG_STYLES.info);
-    const conversationKey = await getOrCreateConversationKey(myUserId, otherUserId, senderPublicKey);
+    const conversationKey = await getOrCreateConversationKey(myUserId, otherUserId, peerPublicKey);
     onProgress(15);
     
     // Download encrypted file
