@@ -59,3 +59,5 @@ pnpm-lock.yaml
 .eslintcache
 
 phases/
+
+server/uploads/
