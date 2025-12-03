@@ -9,7 +9,10 @@ require('dotenv').config();
 const authRoutes = require('./routes/auth');
 const messageRoutes = require('./routes/messages');
 const fileRoutes = require('./routes/files');
+const logsRoutes = require('./routes/logs');
 const Message = require('./models/Message');
+const { validateSocketMessage } = require('./middleware/replayProtection');
+const logger = require('./services/logger');
 
 // Initialize Express app
 const app = express();
@@ -34,6 +37,7 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/files', fileRoutes);
+app.use('/api/logs', logsRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -53,16 +57,49 @@ io.on('connection', (socket) => {
 
   // Relay encrypted message (server cannot decrypt)
   socket.on('message', async (data) => {
-    const { to, ciphertext, iv, timestamp } = data;
+    const { to, ciphertext, iv, timestamp, nonce, sequence } = data;
     
     console.log(`[Message] Encrypted message from ${socket.userId} to ${to}`);
+    
+    // Validate replay protection
+    const validation = validateSocketMessage(
+      { nonce, timestamp, sequence },
+      socket.userId,
+      to
+    );
+    
+    if (!validation.valid) {
+      console.log(`[Message] ⚠️ REPLAY ATTACK BLOCKED:`, validation.errors);
+      
+      // Log each type of replay attack
+      for (const error of validation.errors) {
+        if (error.includes('nonce')) {
+          await logger.logReplayAttack(socket.userId, 'nonce', { nonce: nonce?.substring(0, 16), targetUserId: to });
+        } else if (error.includes('timestamp')) {
+          await logger.logReplayAttack(socket.userId, 'timestamp', { timestamp, targetUserId: to });
+        } else if (error.includes('sequence')) {
+          await logger.logReplayAttack(socket.userId, 'sequence', { sequence, targetUserId: to });
+        }
+      }
+      
+      socket.emit('message_error', {
+        error: 'Replay attack detected',
+        details: validation.errors
+      });
+      return;
+    }
+    
+    // Log successful message
+    await logger.logMessageSent(socket.userId, to);
     
     // Forward to recipient (still encrypted)
     io.to(to).emit('message', {
       from: socket.userId,
       ciphertext,
       iv,
-      timestamp
+      timestamp,
+      nonce,
+      sequence
     });
     
     // Store encrypted message in MongoDB
@@ -73,7 +110,7 @@ io.on('connection', (socket) => {
         recipient: to,
         ciphertext,
         iv,
-        nonce: '', // Could add nonce for replay protection
+        nonce: nonce || '',
         timestamp: new Date(timestamp)
       });
       console.log(`[Message] Encrypted message stored in MongoDB`);
@@ -82,24 +119,34 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Key exchange messages
-  socket.on('kex_init', (data) => {
+  // Key exchange messages with logging
+  socket.on('kex_init', async (data) => {
+    await logger.logKeyExchangeInit(data.senderId, data.receiverId);
     io.to(data.receiverId).emit('kex_init', data);
   });
 
-  socket.on('kex_response', (data) => {
+  socket.on('kex_response', async (data) => {
+    await logger.log('KEY_EXCHANGE_RESPONSE', {
+      userId: data.senderId,
+      targetUserId: data.receiverId,
+      details: { stage: 'KEX_RESPONSE sent' }
+    });
     io.to(data.receiverId).emit('kex_response', data);
   });
 
-  socket.on('kex_confirm', (data) => {
+  socket.on('kex_confirm', async (data) => {
+    await logger.logKeyExchangeComplete(data.senderId, data.receiverId);
     io.to(data.receiverId).emit('kex_confirm', data);
   });
 
   // File sharing notification
-  socket.on('file_shared', (data) => {
+  socket.on('file_shared', async (data) => {
     const { to, fileId, metadata, timestamp } = data;
     
     console.log(`[File] File shared from ${socket.userId} to ${to}: ${metadata.name}`);
+    
+    // Log file share event
+    await logger.logFileUploaded(socket.userId, to, fileId, metadata.name, metadata.size);
     
     // Notify recipient about shared file
     io.to(to).emit('file_shared', {
@@ -130,16 +177,20 @@ const connectDB = async () => {
   try {
     await mongoose.connect(mongoUri, options);
     console.log('Connected to MongoDB');
+    // Log database connection
+    await logger.log('DATABASE_CONNECTED', { details: { uri: mongoUri.replace(/\/\/[^:]+:[^@]+@/, '//***:***@') } });
   } catch (err) {
     console.error('MongoDB connection error:', err.message);
+    await logger.log('DATABASE_ERROR', { details: { error: err.message }, success: false });
     console.log('Retrying connection in 5 seconds...');
     setTimeout(connectDB, 5000);
   }
 };
 
 // Handle MongoDB connection events
-mongoose.connection.on('error', (err) => {
+mongoose.connection.on('error', async (err) => {
   console.error('MongoDB error:', err.message);
+  await logger.log('DATABASE_ERROR', { details: { error: err.message }, success: false });
 });
 
 mongoose.connection.on('disconnected', () => {
@@ -151,8 +202,10 @@ connectDB();
 
 // Start server
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`CryptShare E2E Server running on port ${PORT}`);
+  // Log server start
+  await logger.log('SERVER_START', { details: { port: PORT } });
 });
 
 module.exports = { app, io };

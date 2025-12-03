@@ -177,6 +177,16 @@ export function emitFileShared(data) {
   }
 }
 
+// Listen for message errors (e.g., replay attack detection)
+export function onMessageError(callback) {
+  const sock = initSocket();
+  sock.off('message_error');
+  sock.on('message_error', (data) => {
+    console.error('[Socket] Message error:', data);
+    callback(data);
+  });
+}
+
 // Disconnect socket
 export function disconnect() {
   if (socket) {

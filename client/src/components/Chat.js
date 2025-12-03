@@ -21,6 +21,7 @@ import {
   clearAllSessionKeys 
 } from '../crypto/sessionKeyStore';
 import { FileUploadButton, FileShareModal, FileMessage, useFileHandler } from './FileShare';
+import { addReplayProtection } from '../utils/replayProtection';
 
 // Memoized user list item component
 const UserListItem = memo(function UserListItem({ user, isSelected, onSelect }) {
@@ -480,23 +481,28 @@ function Chat({ user, onLogout }) {
       // Encrypt the message
       const { ciphertext, iv } = await encryptMessage(conversationKey, messageText);
       
-      // Send via socket
+      // Create message with replay protection
+      const conversationId = [user.id, selectedUser._id].sort().join('-');
+      const protectedMessage = addReplayProtection({
+        to: selectedUser._id,
+        ciphertext,
+        iv
+      }, conversationId);
+      
+      // Send via socket with replay protection
       const socket = getSocket();
       if (socket) {
-        socket.emit('message', {
-          to: selectedUser._id,
-          ciphertext,
-          iv,
-          timestamp: Date.now()
-        });
-        console.log('%c📤 Message sent successfully', 'color: #22c55e; font-weight: bold;');
+        socket.emit('message', protectedMessage);
+        console.log('%c📤 Message sent with replay protection', 'color: #22c55e; font-weight: bold;');
+        console.log('%c    Nonce: ' + protectedMessage.nonce.substring(0, 16) + '...', 'color: #94a3b8;');
+        console.log('%c    Sequence: ' + protectedMessage.sequence, 'color: #94a3b8;');
       } else {
         throw new Error('Socket not connected');
       }
     } catch (error) {
       console.error('%c✗ Failed to send message:', 'color: #ef4444; font-weight: bold;', error);
     }
-  }, [inputMessage, selectedUser, getConversationKey]);
+  }, [inputMessage, selectedUser, getConversationKey, user.id]);
 
   // Handle file share completion
   const handleFileShared = useCallback((data) => {
