@@ -7,6 +7,10 @@
  * 1. What a replay attack is
  * 2. How triple-layer protection prevents it
  * 3. Live simulation of attack attempts
+ * 4.  Adding replay-demo
+ * 5 .
+ *
+ * 
  * 
  * Run with: node replay-demo.js
  */
@@ -274,7 +278,8 @@ function demoLiveAttackSimulation() {
     ...originalMessage,
     nonce: generateNonce(),
     timestamp: Date.now(),  // Fresh timestamp
-    sequence: 1  // Still old sequence!
+     // Still old sequence!
+    sequence: 1 
   };
   
   const result4 = server.validateMessage(attackMessage3, conversationId);
